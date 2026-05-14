@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+body {
+    /* Jika Anda ingin background ini di seluruh aplikasi */
+    background-image: url('/images/logo_sekolah.png');
+    background-size: cover; /* Menutupi seluruh area */
+    background-position: center; /* Posisi di tengah */
+    background-attachment: fixed; /* Tetap saat scroll */
+    background-repeat: no-repeat;
+}
+
+/* Override untuk auth background (jika ada) */
+.auth-background { /* Sesuaikan jika Anda punya class lain */
+    background-image: url('/images/logo_sekolah.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+}
+
+/* Jika Anda ingin logo ini hanya muncul sebagai watermark di beberapa bagian,
+   Anda bisa membuatnya lebih transparan atau lebih kecil
+*/
+.watermark-bg {
+    background-image: url('/images/logo_sekolah.png');
+    background-size: 30%; /* Ukuran logo */
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.05; /* Sangat transparan */
+    pointer-events: none; /* Tidak bisa diklik */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+}
