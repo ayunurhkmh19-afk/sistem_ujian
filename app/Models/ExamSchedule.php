@@ -11,21 +11,37 @@ class ExamSchedule extends Model
 
     protected $fillable = [
         'exam_session_id',
-        'subject_name',
+        'subject_id',
+        'time_session_id',
         'exam_date',
-        'start_time',
-        'end_time',
     ];
 
-    // Casting agar tanggal otomatis jadi objek Carbon (mudah diformat di View)
     protected $casts = [
         'exam_date' => 'date',
-        'start_time' => 'datetime', // atau 'string' jika ingin format H:i:s mentah
-        'end_time' => 'datetime',
     ];
 
     public function session()
     {
         return $this->belongsTo(ExamSession::class, 'exam_session_id');
+    }
+
+    public function subject()
+    {
+        return $this->belongsTo(Subject::class);
+    }
+
+    public function timeSession()
+    {
+        return $this->belongsTo(TimeSession::class);
+    }
+
+    public function allocations()
+    {
+        return $this->hasMany(ExamAllocation::class);
+    }
+
+    public function roomSupervisors()
+    {
+        return $this->hasMany(RoomSupervisor::class);
     }
 }

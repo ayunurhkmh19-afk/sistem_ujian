@@ -93,13 +93,13 @@
                     @forelse($jadwalDiolah as $item)
                     <tr class="hover:bg-white/30 transition-colors">
                         <td class="px-6 py-4">
-                            <div class="font-bold text-emerald-900">{{ $item->examSession->title }}</div>
+                            <div class="font-bold text-emerald-900">{{ $item->schedule->session->title }}</div>
                             <div class="text-sm font-black text-emerald-600 mb-1">
-                                {{ $item->examSession->schedules->first()->subject_name ?? '-' }}
+                                {{ $item->schedule->subject->name ?? '-' }} ({{ $item->schedule->subject->level->name }})
                             </div>
                             <div class="text-xs text-emerald-700/70 font-medium">
-                                {{ $item->examSession->schedules->first() ? $item->examSession->schedules->first()->exam_date->translatedFormat('d F Y') : '-' }} <br>
-                                {{ $item->examSession->schedules->first() ? $item->examSession->schedules->first()->start_time->format('H:i') . ' - ' . $item->examSession->schedules->first()->end_time->format('H:i') : '' }}
+                                {{ $item->schedule ? $item->schedule->exam_date->translatedFormat('d F Y') : '-' }} <br>
+                                {{ $item->schedule ? substr($item->schedule->timeSession->start_time, 0, 5) . ' - ' . substr($item->schedule->timeSession->end_time, 0, 5) : '' }}
                             </div>
                         </td>
                         <td class="px-6 py-4 text-center">
@@ -127,7 +127,7 @@
                             @endif
                         </td>
                         <td class="px-6 py-4 text-right">
-                            <a href="{{ route('pengawas.sesi.detail', ['session_id' => $item->exam_session_id, 'room_id' => $item->room_id]) }}" 
+                            <a href="{{ route('pengawas.sesi.detail', ['schedule_id' => $item->exam_schedule_id, 'room_id' => $item->room_id]) }}" 
                                class="group inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95">
                                <span>Lihat Detail</span>
                                <svg class="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>

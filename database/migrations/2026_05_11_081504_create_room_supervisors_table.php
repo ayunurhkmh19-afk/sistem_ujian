@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('room_supervisors', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-            $table->foreignId('exam_session_id')->constrained('exam_sessions')->onDelete('cascade');
+            $table->foreignId('exam_schedule_id')->constrained('exam_schedules')->onDelete('cascade');
             $table->foreignId('room_id')->constrained('rooms')->onDelete('cascade');
             $table->timestamps();
         });

@@ -57,7 +57,7 @@
                         </td>
                         <td class="px-6 py-4">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
-                                {{ $student->class }}
+                                {{ $student->studentClass?->name ?? '-' }}
                             </span>
                         </td>
                         <td class="px-6 py-4 text-center">
@@ -102,8 +102,12 @@
                                         <div class="flex flex-wrap gap-2">
                                             @foreach($student->allocations as $alloc)
                                                 <div class="bg-white px-3 py-2 rounded-lg border border-emerald-100 shadow-sm">
-                                                    <p class="text-xs font-bold text-emerald-700">{{ $alloc->session->title }}</p>
-                                                    <p class="text-xs text-gray-500">Ruang: {{ $alloc->room->name }} | Meja: {{ $alloc->desk_number }}</p>
+                                                    <p class="text-xs font-bold text-emerald-700">{{ $alloc->schedule?->session?->title ?? '-' }}</p>
+                                                    <p class="text-xs text-gray-500">
+                                                        Ruang: {{ $alloc->room?->name ?? '-' }} | 
+                                                        Meja: {{ str_pad($alloc->desk_number, 2, '0', STR_PAD_LEFT) }} |
+                                                        Mapel: {{ $alloc->schedule?->subject?->name ?? '-' }}
+                                                    </p>
                                                 </div>
                                             @endforeach
                                         </div>
@@ -173,7 +177,14 @@
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
-                                    <input type="text" name="class" class="w-full rounded-xl border-gray-300 bg-white/50 focus:border-emerald-500 focus:ring-emerald-500" placeholder="Contoh: XII IPA 1" required>
+                                    <select name="student_class_id" class="w-full rounded-xl border-gray-300 bg-white/50 focus:border-emerald-500 focus:ring-emerald-500 focus:border-emerald-500 focus:ring-emerald-500" required>
+                                        <option value="">Pilih Kelas...</option>
+                                        @foreach($classes as $class)
+                                            <option value="{{ $class->id }}" {{ old('student_class_id') == $class->id ? 'selected' : '' }}>
+                                                {{ $class->name }} ({{ $class->level?->name }})
+                                            </option>
+                                        @endforeach
+                                    </select>
                                 </div>
                             </div>
 

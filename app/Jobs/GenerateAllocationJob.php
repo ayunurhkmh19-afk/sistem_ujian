@@ -2,15 +2,20 @@
 
 namespace App\Jobs;
 
+use App\Models\ExamSession;
+use App\Models\GaAllocationLog;
+use App\Services\GeneticAlgorithmService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class GenerateAllocationJob implements ShouldQueue
 {
     use Queueable;
 
     protected $examSessionId;
-    public $timeout = 120; // Maksimal 2 menit eksekusi
+    public $timeout = 300; // Meningkat ke 5 menit sesuai keputusan V2
 
     /**
      * Create a new job instance.
@@ -26,64 +31,46 @@ class GenerateAllocationJob implements ShouldQueue
     public function handle(): void
     {
         $startTime = microtime(true);
-        $session = \App\Models\ExamSession::find($this->examSessionId);
+        $session = ExamSession::find($this->examSessionId);
         
         if (!$session) return;
 
         try {
-            // Bersihkan data lama menggunakan transaksi DB agar aman
-            \Illuminate\Support\Facades\DB::transaction(function () {
-                \App\Models\ExamAllocation::where('exam_session_id', $this->examSessionId)->delete();
-            });
-
-            // Eksekusi Service Algoritma Genetika
-            $agService = new \App\Services\GeneticAlgorithmService($this->examSessionId);
+            // Jalankan evolusi Algoritma Genetika V2
+            $agService = new GeneticAlgorithmService($this->examSessionId);
             $result = $agService->runEvolution();
 
             if (empty($result['chromosome'])) {
-                throw new \Exception("Gagal men-generate alokasi: Tidak ada hasil dari algoritma.");
+                throw new \Exception("Gagal melakukan evolusi: Tidak ada kromosom terbaik yang dihasilkan.");
             }
 
-            $insertData = [];
-            $seenStudents = [];
-            foreach ($result['chromosome'] as $gen) {
-                if (isset($seenStudents[$gen['student_id']])) continue;
-                $seenStudents[$gen['student_id']] = true;
+            // Translasi hasil evolusi ke tabel exam_schedules dan exam_allocations
+            $agService->translateToDatabase($result['chromosome']);
 
-                $insertData[] = [
-                    'exam_session_id' => $this->examSessionId,
-                    'student_id'      => $gen['student_id'],
-                    'room_id'         => $gen['room_id'],
-                    'desk_number'     => $gen['desk_number'],
-                    'created_at'      => now(),
-                    'updated_at'      => now(),
-                ];
-            }
-
-            // Gunakan chunk insert (per 500 data) agar memori aman
-            foreach (array_chunk($insertData, 500) as $chunk) {
-                \App\Models\ExamAllocation::insert($chunk);
-            }
-
-            // Catat Kesuksesan di Log
-            \App\Models\GaAllocationLog::create([
+            // Catat log kesuksesan
+            GaAllocationLog::create([
                 'exam_session_id' => $this->examSessionId,
                 'total_generations' => $result['generations'],
                 'best_fitness_score' => $result['fitness'],
                 'execution_time_seconds' => microtime(true) - $startTime
             ]);
 
+            // Update status sesi menjadi Selesai
             $session->update(['allocation_status' => 'Completed']);
 
         } catch (\Exception $e) {
-            // Catat Kegagalan
-            \App\Models\GaAllocationLog::create([
+            Log::error("GenerateAllocationJob failed: " . $e->getMessage());
+
+            // Catat log kegagalan
+            GaAllocationLog::create([
                 'exam_session_id' => $this->examSessionId,
                 'total_generations' => 0,
                 'best_fitness_score' => 0,
                 'execution_time_seconds' => microtime(true) - $startTime,
                 'error_message' => $e->getMessage()
             ]);
+
+            // Update status sesi menjadi Gagal
             $session->update(['allocation_status' => 'Failed']);
         }
     }

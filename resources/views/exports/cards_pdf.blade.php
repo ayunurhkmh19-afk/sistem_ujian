@@ -12,14 +12,16 @@
         body { 
             font-family: 'Helvetica', sans-serif; 
             font-size: 11px; 
+            color: #333;
         }
 
         /* CONTAINER KARTU */
         .card-container { 
-            border: 1px solid #000; 
+            border: 1.5px solid #000; 
             padding: 15px; 
-            margin-bottom: 1.2cm; 
-            height: 80mm; /* Tinggi kartu fixed */
+            margin-bottom: 0.8cm; 
+            height: auto; 
+            min-height: 110mm;
             box-sizing: border-box; 
             position: relative; 
             width: 100%; 
@@ -49,19 +51,19 @@
             vertical-align: middle; 
         }
         .header-text h1 { 
-            font-size: 14px; 
+            font-size: 13px; 
             font-weight: bold; 
             margin: 0;
             text-transform: uppercase;
         }
         .header-text h2 { 
-            font-size: 12px; 
+            font-size: 11px; 
             font-weight: bold; 
             margin: 2px 0; 
             text-transform: uppercase;
         }
         .header-text p {
-            font-size: 10px;
+            font-size: 9px;
             margin: 0;
         }
 
@@ -73,18 +75,19 @@
         }
         .photo { 
             display: table-cell; 
-            width: 70px; 
+            width: 75px; 
             vertical-align: top; 
         }
         .photo-box { 
-            width: 60px; 
-            height: 80px; 
-            border: 1px solid #ccc; 
+            width: 65px; 
+            height: 85px; 
+            border: 1px solid #999; 
             text-align: center; 
-            line-height: 80px; 
-            color: #999; 
+            line-height: 85px; 
+            color: #666; 
             font-size: 10px;
             background: #f0f0f0;
+            font-weight: bold;
         }
         .details { 
             display: table-cell; 
@@ -96,28 +99,58 @@
             border-collapse: collapse; 
         }
         .details td { 
-            padding: 3px 0; 
+            padding: 2px 0; 
             vertical-align: top; 
+            font-size: 10px;
         }
         .details .label { 
-            width: 100px; 
+            width: 110px; 
+            font-weight: bold;
         }
         
+        /* TIMETABLE SCHEDULE */
+        .schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 9px;
+        }
+        .schedule-table th, .schedule-table td {
+            border: 1px solid #333;
+            padding: 4px 6px;
+            text-align: left;
+        }
+        .schedule-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 8px;
+        }
+
         /* FOOTER TANDA TANGAN */
-        .footer { 
-            position: absolute; 
-            bottom: 15px; 
-            right: 15px; 
-            text-align: center; 
+        .footer-container {
+            margin-top: 15px;
+            width: 100%;
+            display: table;
         }
-        .footer p { 
-            margin: 0; 
-            padding: 0; 
+        .footer-left {
+            display: table-cell;
+            width: 65%;
         }
-        .footer .name { 
-            margin-top: 50px; 
-            font-weight: bold; 
-            text-decoration: underline; 
+        .footer-right {
+            display: table-cell;
+            width: 35%;
+            text-align: center;
+            font-size: 9px;
+        }
+        .footer-right p {
+            margin: 0;
+            padding: 0;
+        }
+        .footer-right .name {
+            margin-top: 40px;
+            font-weight: bold;
+            text-decoration: underline;
         }
         
         /* PAGE BREAK */
@@ -127,7 +160,17 @@
     </style>
 </head>
 <body>
-    @foreach($allocations as $index => $allocation)
+    @php
+        // Group all allocations by student to print exactly 1 dynamic schedule card per student
+        $groupedAllocations = $allocations->groupBy('student_id');
+    @endphp
+
+    @foreach($groupedAllocations as $studentId => $studentAllocations)
+        @php
+            $firstAlloc = $studentAllocations->first();
+            $student = $firstAlloc->student;
+        @endphp
+
         <div class="card-container">
             <!-- HEADER -->
             <div class="header">
@@ -143,52 +186,76 @@
                     <p>Tahun Pelajaran {{ date('Y') }}/{{ date('Y')+1 }}</p>
                 </div>
                 
-                <!-- LOGO KANAN (Kosongkan atau isi jika ada logo dinas/tutwuri) -->
+                <!-- LOGO KANAN -->
                 <div class="logo"></div>
             </div>
 
             <!-- CONTENT -->
             <div class="content">
                 <div class="photo">
-                    <div class="photo-box">FOTO</div>
+                    <div class="photo-box">3 x 4</div>
                 </div>
                 <div class="details">
                     <table>
                         <!-- Data Siswa -->
                         <tr>
                             <td class="label">Nama Peserta</td>
-                            <td>: <b>{{ strtoupper($allocation->student->name) }}</b></td>
+                            <td>: <b>{{ strtoupper($student->name) }}</b></td>
                         </tr>
                         <tr>
                             <td class="label">Nomor Induk (NIS)</td>
-                            <td>: {{ $allocation->student->nis }}</td>
+                            <td>: {{ $student->nis }}</td>
                         </tr>
                         <tr>
                             <td class="label">Kelas</td>
-                            <td>: {{ $allocation->student->class }}</td>
-                        </tr>
-                        <tr>
-                            <td class="label">Ruang Ujian</td>
-                            <td>: {{ $allocation->room->name }}</td>
-                        </tr>
-                        <tr>
-                            <td class="label">Nomor Meja</td>
-                            <td>: <b style="font-size: 14px;">{{ str_pad($allocation->desk_number, 2, '0', STR_PAD_LEFT) }}</b></td>
+                            <td>: {{ $student->studentClass?->name ?? '-' }}</td>
                         </tr>
                     </table>
                 </div>
             </div>
 
+            <!-- TIMETABLE JADWAL UJIAN -->
+            <table class="schedule-table">
+                <thead>
+                    <tr>
+                        <th style="width: 25%;">Hari, Tanggal</th>
+                        <th style="width: 25%;">Waktu (Sesi)</th>
+                        <th style="width: 25%;">Mata Pelajaran</th>
+                        <th style="width: 15%;">Ruangan</th>
+                        <th style="width: 10%; text-align: center;">Meja</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($studentAllocations as $alloc)
+                        <tr>
+                            <td>{{ \Carbon\Carbon::parse($alloc->schedule->exam_date)->translatedFormat('l, d M Y') }}</td>
+                            <td>
+                                {{ substr($alloc->schedule->timeSession->start_time, 0, 5) }} - {{ substr($alloc->schedule->timeSession->end_time, 0, 5) }}
+                                <br>
+                                <span style="font-size: 8px; color: #666;">({{ $alloc->schedule->timeSession->name }})</span>
+                            </td>
+                            <td style="font-weight: bold;">{{ $alloc->schedule->subject->name }}</td>
+                            <td>{{ $alloc->room->name }}</td>
+                            <td style="text-align: center; font-weight: bold;">{{ str_pad($alloc->desk_number, 2, '0', STR_PAD_LEFT) }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+
             <!-- FOOTER (Tanda Tangan) -->
-            <div class="footer">
-                <p>Kepala Sekolah</p>
-                <p class="name">...................................</p>
-                <p>NIP. ...........................</p>
+            <div class="footer-container">
+                <div class="footer-left"></div>
+                <div class="footer-right">
+                    <p>Bontang, {{ \Carbon\Carbon::now()->translatedFormat('d F Y') }}</p>
+                    <p>Kepala Sekolah,</p>
+                    <p class="name">...................................</p>
+                    <p>NIP. ...........................</p>
+                </div>
             </div>
         </div>
 
-        <!-- Page Break setiap 3 kartu (agar muat di A4 dan rapi) -->
-        @if(($index + 1) % 3 == 0)
+        <!-- Page Break setiap 2 kartu agar muat rapi di A4 portrait -->
+        @if(($loop->iteration) % 2 == 0 && !$loop->last)
             <div class="page-break"></div>
         @endif
     @endforeach

@@ -104,17 +104,17 @@
                             
                             <!-- Usage Stats (Pill Tags) -->
                             <div class="space-y-2">
-                                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pemakaian Terakhir</p>
+                                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pemakaian Sesi</p>
                                 <div class="flex flex-wrap gap-1.5 min-h-[1.5rem]">
-                                    @if($room->rooms->count() > 0)
-                                        @foreach($room->rooms->unique('exam_session_id')->take(3) as $usage)
+                                    @if($room->examSessions->count() > 0)
+                                        @foreach($room->examSessions->take(3) as $usage)
                                             <span class="inline-flex items-center px-2 py-1 rounded-md bg-white border border-gray-100 text-[10px] font-semibold text-gray-600 shadow-sm">
-                                                {{ \Illuminate\Support\Str::limit($usage->session->title ?? 'Sesi Terhapus', 15) }}
+                                                {{ \Illuminate\Support\Str::limit($usage->title ?? 'Sesi Terhapus', 15) }}
                                             </span>
                                         @endforeach
-                                        @if($room->rooms->unique('exam_session_id')->count() > 3)
+                                        @if($room->examSessions->count() > 3)
                                             <span class="inline-flex items-center px-2 py-1 rounded-md bg-gray-50 text-[10px] text-gray-500">
-                                                +{{ $room->rooms->unique('exam_session_id')->count() - 3 }}
+                                                +{{ $room->examSessions->count() - 3 }}
                                             </span>
                                         @endif
                                     @else

@@ -30,7 +30,7 @@ class ExamSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'start_date' => 'required|date',
-            // 'is_active' is handled by toggleStatus, usually not needed here but optional
+            'end_date' => 'required|date|after_or_equal:start_date',
         ]);
 
         $session->update($validated);

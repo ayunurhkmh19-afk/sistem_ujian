@@ -42,8 +42,15 @@
 
                 <div>
                     <label class="block text-xs font-bold text-emerald-800 mb-1 ml-1">Kelas</label>
-                    <input type="text" name="class" value="{{ old('class', $student->class) }}" 
-                           class="w-full rounded-xl border-transparent bg-white/60 focus:bg-white focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 text-emerald-900 shadow-inner py-2.5 px-4 transition-all" required>
+                    <select name="student_class_id" 
+                            class="w-full rounded-xl border-transparent bg-white/60 focus:bg-white focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 text-emerald-900 shadow-inner py-2.5 px-4 transition-all" required>
+                        <option value="">Pilih Kelas...</option>
+                        @foreach($classes as $class)
+                            <option value="{{ $class->id }}" {{ old('student_class_id', $student->student_class_id) == $class->id ? 'selected' : '' }}>
+                                {{ $class->name }} ({{ $class->level?->name }})
+                            </option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <div class="pt-4 flex gap-3">

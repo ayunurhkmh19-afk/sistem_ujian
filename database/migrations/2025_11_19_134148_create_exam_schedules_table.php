@@ -13,10 +13,10 @@ return new class extends Migration
             // Terhubung ke Sesi Ujian (misal: UAS 2025)
             $table->foreignId('exam_session_id')->constrained()->onDelete('cascade');
             
-            $table->string('subject_name'); // Nama Mata Pelajaran
+            // Ditambahkan di V2
+            $table->foreignId('subject_id')->constrained()->onDelete('cascade');
+            $table->foreignId('time_session_id')->constrained()->onDelete('cascade');
             $table->date('exam_date');      // Tanggal Ujian
-            $table->time('start_time');     // Jam Mulai
-            $table->time('end_time');       // Jam Selesai
             
             $table->timestamps();
         });

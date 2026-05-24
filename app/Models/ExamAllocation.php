@@ -7,15 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 class ExamAllocation extends Model
 {
     protected $fillable = [
-        'exam_session_id',
+        'exam_schedule_id',
         'room_id',
         'student_id',
-        'desk_number' // Diisi otomatis saat generate [cite: 30]
+        'desk_number'
     ];
 
-    public function session()
+    public function schedule()
     {
-        return $this->belongsTo(ExamSession::class, 'exam_session_id');
+        return $this->belongsTo(ExamSchedule::class, 'exam_schedule_id');
     }
 
     public function room()

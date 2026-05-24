@@ -26,7 +26,7 @@ $icons = [
 
 <a {{ $attributes->merge(['class' => $baseClasses]) }}
    :class="sidebarCollapsed ? 'justify-center px-0 py-3' : 'px-4 py-3'"
-   :title="sidebarCollapsed ? '{{ strip_tags($slot) }}' : ''">
+   :title="sidebarCollapsed ? '{{ addslashes(trim(preg_replace('/\s+/', ' ', strip_tags($slot)))) }}' : ''">
 
     <!-- Efek Kilau saat Hover -->
     <div class="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out"></div>

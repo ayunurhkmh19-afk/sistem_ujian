@@ -14,19 +14,21 @@
         
         <div class="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <div class="space-y-1">
-                <p class="text-xs font-bold text-emerald-800/60 uppercase tracking-widest">Nama Kegiatan</p>
-                <p class="text-xl font-black text-emerald-900">{{ $sesi->title }}</p>
+                <p class="text-xs font-bold text-emerald-800/60 uppercase tracking-widest">Sesi Kegiatan</p>
+                <p class="text-xl font-black text-emerald-900 leading-tight">{{ $schedule->session->title }}</p>
             </div>
             <div class="space-y-1">
-                <p class="text-xs font-bold text-emerald-800/60 uppercase tracking-widest">Ruangan</p>
-                <p class="text-xl font-black text-emerald-900">{{ $alokasiSiswa->first()->room->name ?? 'N/A' }}</p>
+                <p class="text-xs font-bold text-emerald-800/60 uppercase tracking-widest">Mata Pelajaran & Ruang</p>
+                <p class="text-xl font-black text-emerald-900 leading-tight">
+                    {{ $schedule->subject->name }} ({{ $room->name }})
+                </p>
             </div>
             <div class="space-y-1">
                 <p class="text-xs font-bold text-emerald-800/60 uppercase tracking-widest">Tanggal & Waktu</p>
                 <p class="text-xl font-black text-emerald-900">
-                    {{ $sesi->schedules->first()->exam_date->translatedFormat('d F Y') }} <br>
+                    {{ $schedule->exam_date->translatedFormat('d F Y') }} <br>
                     <span class="text-emerald-700/70 text-sm">
-                        {{ $sesi->schedules->first()->start_time->format('H:i') }} - {{ $sesi->schedules->first()->end_time->format('H:i') }}
+                        {{ substr($schedule->timeSession->start_time, 0, 5) }} - {{ substr($schedule->timeSession->end_time, 0, 5) }} ({{ $schedule->timeSession->name }})
                     </span>
                 </p>
             </div>
@@ -59,8 +61,8 @@
         <div class="lg:col-span-2">
             <form action="{{ route('pengawas.absensi.store') }}" method="POST">
                 @csrf
-                <input type="hidden" name="exam_session_id" value="{{ $sesi->id }}">
-                <input type="hidden" name="room_id" value="{{ $room_id }}">
+                <input type="hidden" name="exam_schedule_id" value="{{ $schedule->id }}">
+                <input type="hidden" name="room_id" value="{{ $room->id }}">
 
                 <div class="bg-white/40 backdrop-blur-xl border border-white/50 rounded-[2rem] shadow-xl overflow-hidden">
                     <div class="p-6 border-b border-white/20 flex justify-between items-center">
@@ -134,8 +136,8 @@
 
                 <form action="{{ route('pengawas.report.store') }}" method="POST">
                     @csrf
-                    <input type="hidden" name="exam_session_id" value="{{ $sesi->id }}">
-                    <input type="hidden" name="room_id" value="{{ $room_id }}">
+                    <input type="hidden" name="exam_schedule_id" value="{{ $schedule->id }}">
+                    <input type="hidden" name="room_id" value="{{ $room->id }}">
 
                     <div class="mb-6">
                         <label class="block text-xs font-bold text-emerald-800/60 uppercase tracking-widest mb-2">Catatan Kejadian Selama Ujian</label>

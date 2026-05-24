@@ -2,29 +2,59 @@
 
 namespace App\Services;
 
+use App\Models\ExamSession;
 use App\Models\Room;
+use App\Models\Subject;
+use App\Models\TimeSession;
 use App\Models\Student;
+use App\Models\Level;
+use App\Models\ExamSchedule;
+use App\Models\ExamAllocation;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class GeneticAlgorithmService
 {
-    protected $students;
+    protected $session;
     protected $rooms;
-    protected $populationSize = 100;
-    protected $maxGenerations = 1000;
-    protected $mutationRate = 0.10; // 10% kemungkinan mutasi
+    protected $timeSessions;
+    protected $subjects;
+    protected $students;
+    protected $levels;
+    protected $totalDays;
+
+    protected $populationSize = 25;   // Diturunkan sesuai keputusan V2
+    protected $maxGenerations = 100;  // Diturunkan sesuai keputusan V2
+    protected $mutationRate = 0.10;   // 10%
 
     public function __construct($examSessionId)
     {
-        // Ambil data ruangan yang di-assign ke sesi ini
-        $this->rooms = Room::where('exam_session_id', $examSessionId)->get()->toArray();
+        $this->session = ExamSession::findOrFail($examSessionId);
         
-        // Ambil daftar seluruh siswa untuk dialokasikan
-        $this->students = Student::all()->toArray();
+        // Ambil data terpilih dari pivot
+        $this->rooms = $this->session->rooms()->get()->toArray();
+        $this->timeSessions = $this->session->timeSessions()->get()->toArray();
+        $this->subjects = $this->session->subjects()->with('level')->get()->toArray();
+        
+        // Ambil levels yang aktif
+        $activeLevelIds = collect($this->subjects)->pluck('level_id')->unique()->toArray();
+        $this->levels = Level::whereIn('id', $activeLevelIds)->get()->toArray();
+
+        // Ambil siswa yang terdaftar di level aktif
+        $this->students = Student::whereHas('studentClass', function ($q) use ($activeLevelIds) {
+            $q->whereIn('level_id', $activeLevelIds);
+        })->with('studentClass')->get()->toArray();
+
+        // Hitung total hari ujian
+        $start = Carbon::parse($this->session->start_date);
+        $end = Carbon::parse($this->session->end_date);
+        $this->totalDays = $start->diffInDays($end) + 1;
     }
 
     public function runEvolution()
     {
-        if (empty($this->rooms) || empty($this->students)) {
+        if (empty($this->rooms) || empty($this->timeSessions) || empty($this->subjects) || empty($this->students)) {
             return [
                 'chromosome' => [],
                 'fitness' => 0,
@@ -46,10 +76,13 @@ class GeneticAlgorithmService
             $bestChromosome = $population[0];
             $bestFitness = $bestChromosome['fitness'];
 
-            if ($bestFitness >= 1.0) break; // Sempurna, hentikan evolusi
+            // Log status perkembangan evolusi
+            Log::info("GA Generation {$generation} - Best Fitness: {$bestFitness}");
+
+            if ($bestFitness >= 1.0) break; // Solusi sempurna ditemukan!
 
             $newPopulation = [];
-            // Elitism: Pertahankan 2 kromosom terbaik ke generasi berikutnya
+            // Elitism: Pertahankan 2 kromosom terbaik tanpa perubahan
             $newPopulation[] = $population[0];
             $newPopulation[] = $population[1];
 
@@ -58,8 +91,8 @@ class GeneticAlgorithmService
                 $parent1 = $this->tournamentSelection($population);
                 $parent2 = $this->tournamentSelection($population);
 
-                $child = $this->crossover($parent1, $parent2);
-                $child = $this->mutate($child);
+                $child = $this->uniformCrossover($parent1, $parent2);
+                $child = $this->targetedMutate($child);
                 $child = $this->repair($child);
 
                 $newPopulation[] = $child;
@@ -75,66 +108,185 @@ class GeneticAlgorithmService
         ];
     }
 
-    // 1. INISIALISASI POPULASI
+    /**
+     * 1. INISIALISASI POPULASI DENGAN HEURISTIK ROUND-ROBIN
+     */
     private function initializePopulation()
     {
         $population = [];
-        for ($i = 0; $i < $this->populationSize; $i++) {
-            $chromosome = [];
-            foreach ($this->students as $student) {
-                // Alokasi acak ruang dan meja untuk awal
-                $randomRoom = $this->rooms[array_rand($this->rooms)];
-                $chromosome[] = [
-                    'student_id' => $student['id'],
-                    'room_id' => $randomRoom['id'],
-                    'desk_number' => rand(1, $randomRoom['capacity'])
+        
+        // Dapatkan slot waktu yang tersedia: array of [day_index, time_session_id]
+        $timeSlots = [];
+        for ($day = 1; $day <= $this->totalDays; $day++) {
+            foreach ($this->timeSessions as $ts) {
+                $timeSlots[] = [
+                    'day_index' => $day,
+                    'time_session_id' => $ts['id']
                 ];
             }
-            $population[] = ['genes' => $chromosome, 'fitness' => 0];
         }
+
+        // Distribusikan mata pelajaran per level secara heuristik round-robin ke slot-slot waktu
+        $levelSubjectSlots = []; // [level_id][subject_id] => [day_index, time_session_id]
+        foreach ($this->levels as $level) {
+            $levelId = $level['id'];
+            $levelSubjects = collect($this->subjects)->where('level_id', $levelId)->values()->all();
+            
+            // Shuffle slot waktu agar inisiasi populasi bervariasi per level
+            $shuffledSlots = $timeSlots;
+            shuffle($shuffledSlots);
+
+            foreach ($levelSubjects as $index => $subject) {
+                // Gunakan slot sirkuler jika jumlah mapel > total slots (meski pre-flight melarangnya)
+                $slot = $shuffledSlots[$index % count($shuffledSlots)];
+                $levelSubjectSlots[$levelId][$subject['id']] = $slot;
+            }
+        }
+
+        // Generate N kromosom
+        for ($i = 0; $i < $this->populationSize; $i++) {
+            $genes = [];
+
+            // Urutan loop ini konsisten di seluruh inisialisasi populasi
+            foreach ($this->levels as $level) {
+                $levelId = $level['id'];
+                $levelStudents = collect($this->students)->where('student_class.level_id', $levelId)->all();
+                $levelSubjects = collect($this->subjects)->where('level_id', $levelId)->all();
+
+                foreach ($levelStudents as $student) {
+                    foreach ($levelSubjects as $subject) {
+                        // Ambil slot heuristik yang sudah ditentukan agar tidak bentrok
+                        $slot = $levelSubjectSlots[$levelId][$subject['id']] ?? $timeSlots[0];
+                        
+                        // Pilih ruangan acak dan nomor meja acak
+                        $randomRoom = $this->rooms[array_rand($this->rooms)];
+                        $desk = rand(1, $randomRoom['capacity']);
+
+                        $genes[] = [
+                            'student_id' => $student['id'],
+                            'level_id' => $levelId,
+                            'subject_id' => $subject['id'],
+                            'day_index' => $slot['day_index'],
+                            'time_session_id' => $slot['time_session_id'],
+                            'room_id' => $randomRoom['id'],
+                            'desk_number' => $desk
+                        ];
+                    }
+                }
+            }
+
+            $population[] = [
+                'genes' => $genes,
+                'fitness' => 0
+            ];
+        }
+
         return $population;
     }
 
-    // 2. EVALUASI FITNESS BERDASARKAN PENALTI
-    private function evaluateFitness($population)
+    /**
+     * 2. EVALUASI FITNESS DENGAN 4 HARD CONSTRAINTS & 2 SOFT CONSTRAINTS
+     */
+    public function evaluateFitness($population)
     {
+        // Cache data ruangan untuk pencarian kapasitas super cepat
+        $roomCapacities = collect($this->rooms)->pluck('capacity', 'id')->toArray();
+
         foreach ($population as &$indv) {
             $penalty = 0;
-            $roomCounts = [];
-            $deskTracker = [];
+
+            // TRACKERS
+            $roomSessionTracker = [];  // [day][session][room] => {studentsCount, levelIds[], deskNumbers[]}
+            $studentTimeTracker = [];  // [student][day][session] => subjectCount
+            $subjectTimeTracker = [];  // [subject] => array of 'day_session' keys
 
             foreach ($indv['genes'] as $gene) {
-                $rId = $gene['room_id'];
+                $studentId = $gene['student_id'];
+                $levelId = $gene['level_id'];
+                $subjectId = $gene['subject_id'];
+                $day = $gene['day_index'];
+                $session = $gene['time_session_id'];
+                $room = $gene['room_id'];
                 $desk = $gene['desk_number'];
 
-                // Hitung jumlah siswa di satu ruangan
-                if (!isset($roomCounts[$rId])) $roomCounts[$rId] = 0;
-                $roomCounts[$rId]++;
-
-                // Lacak duplikasi meja di ruangan yang sama
-                $key = $rId . '_' . $desk;
-                if (isset($deskTracker[$key])) {
-                    $penalty += 100; // HARD CONSTRAINT: Meja sama
+                // 1. TRACK ROOM SESSION
+                if (!isset($roomSessionTracker[$day][$session][$room])) {
+                    $roomSessionTracker[$day][$session][$room] = [
+                        'count' => 0,
+                        'levels' => [],
+                        'desks' => []
+                    ];
+                }
+                $roomSessionTracker[$day][$session][$room]['count']++;
+                $roomSessionTracker[$day][$session][$room]['levels'][$levelId] = true;
+                
+                // Cek Hard Constraint #4: Desk Collision (+100)
+                if (isset($roomSessionTracker[$day][$session][$room]['desks'][$desk])) {
+                    $penalty += 100;
                 } else {
-                    $deskTracker[$key] = true;
+                    $roomSessionTracker[$day][$session][$room]['desks'][$desk] = true;
+                }
+
+                // 2. TRACK STUDENT TIME
+                if (!isset($studentTimeTracker[$studentId][$day][$session])) {
+                    $studentTimeTracker[$studentId][$day][$session] = 0;
+                }
+                $studentTimeTracker[$studentId][$day][$session]++;
+                
+                // Cek Hard Constraint #3: Student Collision (+100)
+                if ($studentTimeTracker[$studentId][$day][$session] > 1) {
+                    $penalty += 100;
+                }
+
+                // 3. TRACK SUBJECT TIME
+                $timeKey = $day . '_' . $session;
+                $subjectTimeTracker[$subjectId][$timeKey] = true;
+            }
+
+            // 4. EVALUASI HARD CONSTRAINT #1 (Overcapacity) & #2 (Level Mixing) & SOFT CONSTRAINT #2 (Underutilization)
+            foreach ($roomSessionTracker as $day => $sessions) {
+                foreach ($sessions as $session => $roomsData) {
+                    foreach ($roomsData as $roomId => $data) {
+                        $count = $data['count'];
+                        $capacity = $roomCapacities[$roomId] ?? 30;
+                        
+                        // Hard Constraint #1: Overcapacity
+                        if ($count > $capacity) {
+                            $penalty += 100 * ($count - $capacity);
+                        }
+
+                        // Hard Constraint #2: Level Mixing
+                        if (count($data['levels']) > 1) {
+                            $penalty += 100;
+                        }
+
+                        // Soft Constraint #2: Room Underutilization (+5)
+                        // Ruangan terisi tapi di bawah 30% kapasitas
+                        if ($count > 0 && $count < ($capacity * 0.3)) {
+                            $penalty += 5;
+                        }
+                    }
                 }
             }
 
-            // Cek kelebihan kapasitas
-            foreach ($this->rooms as $room) {
-                $rId = $room['id'];
-                if (isset($roomCounts[$rId]) && $roomCounts[$rId] > $room['capacity']) {
-                    $penalty += 100 * ($roomCounts[$rId] - $room['capacity']); // HARD CONSTRAINT
+            // 5. EVALUASI SOFT CONSTRAINT #1 (Subject Scattering)
+            foreach ($subjectTimeTracker as $subjectId => $slots) {
+                $sessionCount = count($slots);
+                if ($sessionCount > 2) {
+                    $penalty += 10 * ($sessionCount - 2);
                 }
             }
 
-            // Hitung skor fitness (Makin kecil penalti, fitness mendekati 1)
+            // Skor Fitness (1 / (1 + penalti))
             $indv['fitness'] = 1 / (1 + $penalty);
         }
+
         return $population;
     }
 
-    // 3. TOURNAMENT SELECTION
+    /**
+     * 3. TOURNAMENT SELECTION
+     */
     private function tournamentSelection($population)
     {
         $tournamentSize = 5;
@@ -148,78 +300,225 @@ class GeneticAlgorithmService
         return $best;
     }
 
-    // 4. SINGLE POINT CROSSOVER
-    private function crossover($parent1, $parent2)
+    /**
+     * 4. UNIFORM CROSSOVER (50/50 PER GENE)
+     */
+    private function uniformCrossover($parent1, $parent2)
     {
         $genesLength = count($parent1['genes']);
-        $crossoverPoint = rand(1, $genesLength - 1);
+        $childGenes = [];
 
-        $childGenes = array_merge(
-            array_slice($parent1['genes'], 0, $crossoverPoint),
-            array_slice($parent2['genes'], $crossoverPoint)
-        );
-
-        return ['genes' => $childGenes, 'fitness' => 0];
-    }
-
-    // 5. MUTASI
-    private function mutate($chromosome)
-    {
-        foreach ($chromosome['genes'] as &$gene) {
-            if (rand(1, 100) <= ($this->mutationRate * 100)) {
-                // Ubah acak ruangan atau meja
-                $randomRoom = $this->rooms[array_rand($this->rooms)];
-                $gene['room_id'] = $randomRoom['id'];
-                $gene['desk_number'] = rand(1, $randomRoom['capacity']);
+        for ($i = 0; $i < $genesLength; $i++) {
+            if (rand(0, 1) >= 0.5) {
+                $childGenes[] = $parent1['genes'][$i];
+            } else {
+                $childGenes[] = $parent2['genes'][$i];
             }
         }
+
+        return [
+            'genes' => $childGenes,
+            'fitness' => 0
+        ];
+    }
+
+    /**
+     * 5. TARGETED MUTATION (MUTASI CERDAS BERDASARKAN PELANGGARAN)
+     */
+    private function targetedMutate($chromosome)
+    {
+        // Tracker cepat untuk deteksi pelanggaran gen
+        $studentTimeCount = [];
+        $roomSessionCount = [];
+
+        foreach ($chromosome['genes'] as $gene) {
+            $studentId = $gene['student_id'];
+            $day = $gene['day_index'];
+            $session = $gene['time_session_id'];
+            $room = $gene['room_id'];
+
+            $studentKey = $studentId . '_' . $day . '_' . $session;
+            $studentTimeCount[$studentKey] = ($studentTimeCount[$studentKey] ?? 0) + 1;
+
+            $roomKey = $day . '_' . $session . '_' . $room;
+            $roomSessionCount[$roomKey] = ($roomSessionCount[$roomKey] ?? 0) + 1;
+        }
+
+        // Ambil data kapasitas ruangan untuk rujukan mutasi
+        $roomCapacities = collect($this->rooms)->pluck('capacity', 'id')->toArray();
+
+        foreach ($chromosome['genes'] as &$gene) {
+            if (rand(1, 100) <= ($this->mutationRate * 100)) {
+                $studentId = $gene['student_id'];
+                $day = $gene['day_index'];
+                $session = $gene['time_session_id'];
+                $room = $gene['room_id'];
+
+                $studentKey = $studentId . '_' . $day . '_' . $session;
+                $roomKey = $day . '_' . $session . '_' . $room;
+
+                $hasStudentCollision = ($studentTimeCount[$studentKey] ?? 0) > 1;
+                $hasRoomOverflow = ($roomSessionCount[$roomKey] ?? 0) > ($roomCapacities[$room] ?? 30);
+
+                if ($hasStudentCollision) {
+                    // TARGETED MUTATION: Ubah waktu (day atau session) agar bentrok hilang
+                    $gene['day_index'] = rand(1, $this->totalDays);
+                    $gene['time_session_id'] = $this->timeSessions[array_rand($this->timeSessions)]['id'];
+                } elseif ($hasRoomOverflow) {
+                    // TARGETED MUTATION: Ubah ruangan & meja agar tidak overcapacity
+                    $randomRoom = $this->rooms[array_rand($this->rooms)];
+                    $gene['room_id'] = $randomRoom['id'];
+                    $gene['desk_number'] = rand(1, $randomRoom['capacity']);
+                } else {
+                    // Mutasi acak salah satu dimensi
+                    $choice = rand(1, 4);
+                    if ($choice === 1) {
+                        $gene['day_index'] = rand(1, $this->totalDays);
+                    } elseif ($choice === 2) {
+                        $gene['time_session_id'] = $this->timeSessions[array_rand($this->timeSessions)]['id'];
+                    } else {
+                        $randomRoom = $this->rooms[array_rand($this->rooms)];
+                        $gene['room_id'] = $randomRoom['id'];
+                        $gene['desk_number'] = rand(1, $randomRoom['capacity']);
+                    }
+                }
+            }
+        }
+
         return $chromosome;
     }
 
-    // 6. REPAIR
+    /**
+     * 6. REPAIR FUNCTION (PERBAIKI MEJA BENTROK SECARA INSTAN)
+     */
     private function repair($chromosome)
     {
         $usedSlots = [];
         $conflicts = [];
 
-        // 1. Identifikasi slot yang digunakan dan konflik
+        // Lacak duplikasi meja di setiap slot
         foreach ($chromosome['genes'] as $index => $gene) {
-            $key = $gene['room_id'] . '_' . $gene['desk_number'];
+            $key = $gene['day_index'] . '_' . $gene['time_session_id'] . '_' . $gene['room_id'] . '_' . $gene['desk_number'];
             if (isset($usedSlots[$key])) {
-                $conflicts[] = $index; // Index dari gen yang konflik
+                $conflicts[] = $index;
             } else {
                 $usedSlots[$key] = true;
             }
         }
 
-        // Jika tidak ada konflik, selesai
         if (empty($conflicts)) {
             return $chromosome;
         }
 
-        // 2. Kumpulkan semua slot yang tersedia (kapasitas ruangan)
-        $availableSlots = [];
-        foreach ($this->rooms as $room) {
-            for ($i = 1; $i <= $room['capacity']; $i++) {
-                $key = $room['id'] . '_' . $i;
-                if (!isset($usedSlots[$key])) {
-                    $availableSlots[] = ['room_id' => $room['id'], 'desk_number' => $i];
+        // Cari meja kosong di ruangan & slot yang bersangkutan
+        foreach ($conflicts as $index) {
+            $gene = $chromosome['genes'][$index];
+            $day = $gene['day_index'];
+            $session = $gene['time_session_id'];
+            $room = $gene['room_id'];
+
+            // Lacak kapasitas ruangan aktif secara aman
+            $roomData = collect($this->rooms)->where('id', $room)->first();
+            $roomCapacity = $roomData['capacity'] ?? 30;
+
+            $repaired = false;
+            for ($d = 1; $d <= $roomCapacity; $d++) {
+                $testKey = $day . '_' . $session . '_' . $room . '_' . $d;
+                if (!isset($usedSlots[$testKey])) {
+                    $chromosome['genes'][$index]['desk_number'] = $d;
+                    $usedSlots[$testKey] = true;
+                    $repaired = true;
+                    break;
+                }
+            }
+
+            // Jika ruangan itu benar-benar penuh meja kosongnya, carikan ruangan aktif lain di slot itu
+            if (!$repaired) {
+                $shuffledRooms = $this->rooms;
+                shuffle($shuffledRooms);
+                foreach ($shuffledRooms as $altRoom) {
+                    for ($d = 1; $d <= $altRoom['capacity']; $d++) {
+                        $testKey = $day . '_' . $session . '_' . $altRoom['id'] . '_' . $d;
+                        if (!isset($usedSlots[$testKey])) {
+                            $chromosome['genes'][$index]['room_id'] = $altRoom['id'];
+                            $chromosome['genes'][$index]['desk_number'] = $d;
+                            $usedSlots[$testKey] = true;
+                            $repaired = true;
+                            break 2;
+                        }
+                    }
                 }
             }
         }
 
-        // Acak slot yang tersedia
-        shuffle($availableSlots);
-
-        // 3. Perbaiki gen yang konflik dengan slot yang tersedia
-        foreach ($conflicts as $index) {
-            if (!empty($availableSlots)) {
-                $slot = array_pop($availableSlots);
-                $chromosome['genes'][$index]['room_id'] = $slot['room_id'];
-                $chromosome['genes'][$index]['desk_number'] = $slot['desk_number'];
-            }
-        }
-
         return $chromosome;
+    }
+
+    /**
+     * 7. TRANSLASI KROMOSOM TERBAIK KE DATABASE JADWAL & ALOKASI
+     */
+    public function translateToDatabase($bestGenes)
+    {
+        DB::beginTransaction();
+
+        try {
+            // Hapus jadwal & alokasi lama sesi ini (Fresh Overwrite)
+            $oldScheduleIds = ExamSchedule::where('exam_session_id', $this->session->id)->pluck('id')->toArray();
+            ExamAllocation::whereIn('exam_schedule_id', $oldScheduleIds)->delete();
+            ExamSchedule::where('exam_session_id', $this->session->id)->delete();
+
+            // 1. Ekstrak jadwal unik: kombinasi [subject_id, day_index, time_session_id]
+            $uniqueScheduleKeys = [];
+            foreach ($bestGenes as $gene) {
+                $key = $gene['subject_id'] . '_' . $gene['day_index'] . '_' . $gene['time_session_id'];
+                $uniqueScheduleKeys[$key] = [
+                    'subject_id' => $gene['subject_id'],
+                    'day_index' => $gene['day_index'],
+                    'time_session_id' => $gene['time_session_id']
+                ];
+            }
+
+            // Simpan Jadwal Baru
+            $scheduleModels = [];
+            $startDate = Carbon::parse($this->session->start_date);
+
+            foreach ($uniqueScheduleKeys as $key => $data) {
+                // Hitung tanggal nyata: start_date + (day_index - 1)
+                $examDate = (clone $startDate)->addDays($data['day_index'] - 1);
+
+                $sched = ExamSchedule::create([
+                    'exam_session_id' => $this->session->id,
+                    'subject_id' => $data['subject_id'],
+                    'time_session_id' => $data['time_session_id'],
+                    'exam_date' => $examDate->format('Y-m-d'),
+                ]);
+
+                $scheduleModels[$key] = $sched->id;
+            }
+
+            // 2. Simpan Alokasi Baru
+            foreach ($bestGenes as $gene) {
+                $key = $gene['subject_id'] . '_' . $gene['day_index'] . '_' . $gene['time_session_id'];
+                $scheduleId = $scheduleModels[$key] ?? null;
+
+                if ($scheduleId) {
+                    ExamAllocation::create([
+                        'exam_schedule_id' => $scheduleId,
+                        'room_id' => $gene['room_id'],
+                        'student_id' => $gene['student_id'],
+                        'desk_number' => $gene['desk_number'],
+                    ]);
+                }
+            }
+
+            DB::commit();
+            Log::info("GA Evolution successfully translated to Database for ExamSession #{$this->session->id}");
+            return true;
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to translate GA results to Database: " . $e->getMessage());
+            throw $e;
+        }
     }
 }

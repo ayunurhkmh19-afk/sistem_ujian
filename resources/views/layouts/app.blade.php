@@ -64,6 +64,31 @@
         </div>
 
         <style>
+            /* CUSTOM SCROLLBAR TEMA GLASSMORPHISM EMERALD/LIME */
+            ::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+            }
+            ::-webkit-scrollbar-track {
+                background: rgba(6, 78, 59, 0.05);
+                border-radius: 9999px;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: rgba(163, 230, 53, 0.25);
+                border-radius: 9999px;
+                border: 1.5px solid rgba(16, 185, 129, 0.1);
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: rgba(163, 230, 53, 0.65);
+                box-shadow: 0 0 10px rgba(163, 230, 53, 0.4);
+            }
+            
+            /* Firefox Support */
+            * {
+                scrollbar-width: thin;
+                scrollbar-color: rgba(163, 230, 53, 0.25) rgba(6, 78, 59, 0.05);
+            }
+
             @keyframes blob {
                 0% { transform: translate(0px, 0px) scale(1); }
                 33% { transform: translate(30px, -50px) scale(1.1); }

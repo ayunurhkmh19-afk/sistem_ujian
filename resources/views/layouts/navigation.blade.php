@@ -55,37 +55,28 @@
         <nav class="flex-1 overflow-y-auto overflow-x-hidden py-6 space-y-2 scrollbar-hide">
             
             <!-- Dashboard -->
-            <x-nav-link-glass :href="route('dashboard')" :active="request()->routeIs('dashboard')" icon="home">
-                <!-- FIX: ml-3 dipindahkan ke dalam dynamic class -->
+            @php
+                $dashboardUrl = Auth::user()->role === 'panitia' ? route('dashboard') : route('pengawas.dashboard');
+                $dashboardActive = Auth::user()->role === 'panitia' ? request()->routeIs('dashboard') : request()->routeIs('pengawas.dashboard');
+            @endphp
+            <x-nav-link-glass :href="$dashboardUrl" :active="$dashboardActive" icon="home">
                 <span class="whitespace-nowrap transition-opacity duration-200" 
                       :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Dashboard</span>
             </x-nav-link-glass>
 
             @if(Auth::user()->role === 'panitia')
                 
-                <!-- Divider -->
+                <!-- Divider 1: Manajemen & Transaksional Ujian -->
                 <div class="mt-6 mb-2 text-[10px] font-extrabold text-emerald-300/60 uppercase tracking-widest transition-all duration-300 whitespace-nowrap overflow-hidden flex items-center"
                      :class="sidebarCollapsed ? 'justify-center px-0' : 'px-6'">
-                    <span x-show="!sidebarCollapsed">Menu Utama</span>
+                    <span x-show="!sidebarCollapsed">Manajemen Ujian</span>
                     <span x-show="sidebarCollapsed" class="h-0.5 w-4 bg-emerald-300/30 rounded-full"></span>
                 </div>
 
-                <!-- Wizard -->
+                <!-- Wizard: Buat Ujian Baru -->
                 <x-nav-link-glass :href="route('wizard.step1')" :active="request()->routeIs('wizard.*')" icon="sparkles" isSpecial="true">
                     <span class="whitespace-nowrap transition-opacity duration-200" 
                           :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Buat Ujian Baru</span>
-                </x-nav-link-glass>
-
-                <!-- Data Siswa -->
-                <x-nav-link-glass :href="route('students.index')" :active="request()->routeIs('students.*')" icon="users">
-                    <span class="whitespace-nowrap transition-opacity duration-200" 
-                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Data Siswa</span>
-                </x-nav-link-glass>
-
-                <!-- Master Ruangan -->
-                <x-nav-link-glass :href="route('master_rooms.index')" :active="request()->routeIs('master_rooms.*')" icon="archive">
-                    <span class="whitespace-nowrap transition-opacity duration-200" 
-                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Master Ruangan</span>
                 </x-nav-link-glass>
 
                 <!-- Riwayat Ujian -->
@@ -94,31 +85,60 @@
                           :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Riwayat Ujian</span>
                 </x-nav-link-glass>
 
-                <!-- Jadwal Ujian -->
+                <!-- Jadwal & Pengawas -->
                 <x-nav-link-glass :href="route('schedules.selection')" :active="request()->routeIs('schedules.selection') || request()->routeIs('sessions.schedules.*')" icon="calendar">
                     <span class="whitespace-nowrap transition-opacity duration-200 flex items-center justify-between w-full" 
                           :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">
-                        <span>Jadwal Ujian</span>
-                        <span class="px-1.5 py-0.5 rounded text-[9px] bg-white/20 text-white font-bold shadow-sm border border-white/10">
+                        <span>Jadwal & Pengawas</span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] bg-white/20 text-white font-bold shadow-sm border border-white/10" x-show="!sidebarCollapsed">
                             {{ \App\Models\ExamSession::count() }}
                         </span>
                     </span>
                 </x-nav-link-glass>
-            @endif
 
-            @if(Auth::user()->role === 'pengawas')
-                <!-- Divider -->
+                <!-- Divider 2: Data Master / Bank Data Akademik -->
                 <div class="mt-6 mb-2 text-[10px] font-extrabold text-emerald-300/60 uppercase tracking-widest transition-all duration-300 whitespace-nowrap overflow-hidden flex items-center"
                      :class="sidebarCollapsed ? 'justify-center px-0' : 'px-6'">
-                    <span x-show="!sidebarCollapsed">Menu Pengawas</span>
+                    <span x-show="!sidebarCollapsed">Data Akademik</span>
                     <span x-show="sidebarCollapsed" class="h-0.5 w-4 bg-emerald-300/30 rounded-full"></span>
                 </div>
 
-                <!-- Dashboard Pengawas -->
-                <x-nav-link-glass :href="route('pengawas.dashboard')" :active="request()->routeIs('pengawas.dashboard')" icon="home">
+                <!-- Tingkatan Kelas (Levels) -->
+                <x-nav-link-glass :href="route('levels.index')" :active="request()->routeIs('levels.*')" icon="users">
                     <span class="whitespace-nowrap transition-opacity duration-200" 
-                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Dashboard Pengawas</span>
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Tingkatan Kelas</span>
                 </x-nav-link-glass>
+
+                <!-- Kelas (Classes) -->
+                <x-nav-link-glass :href="route('student_classes.index')" :active="request()->routeIs('student_classes.*')" icon="users">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Data Kelas</span>
+                </x-nav-link-glass>
+
+                <!-- Mata Pelajaran (Subjects) -->
+                <x-nav-link-glass :href="route('subjects.index')" :active="request()->routeIs('subjects.*')" icon="sparkles">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Mata Pelajaran</span>
+                </x-nav-link-glass>
+
+                <!-- Sesi Waktu (Time Sessions) -->
+                <x-nav-link-glass :href="route('time_sessions.index')" :active="request()->routeIs('time_sessions.*')" icon="calendar">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Sesi Waktu</span>
+                </x-nav-link-glass>
+
+                <!-- Master Ruangan -->
+                <x-nav-link-glass :href="route('master_rooms.index')" :active="request()->routeIs('master_rooms.*')" icon="archive">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Master Ruangan</span>
+                </x-nav-link-glass>
+
+                <!-- Data Siswa -->
+                <x-nav-link-glass :href="route('students.index')" :active="request()->routeIs('students.*')" icon="users">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Data Siswa</span>
+                </x-nav-link-glass>
+
             @endif
 
             <!-- Divider -->

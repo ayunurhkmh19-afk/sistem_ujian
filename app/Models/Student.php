@@ -12,12 +12,21 @@ class Student extends Model
     protected $fillable = [
         'nis',
         'name',
-        'class', // Field ini vital untuk filter range siswa
+        'student_class_id',
     ];
+
+    public function studentClass()
+    {
+        return $this->belongsTo(StudentClass::class);
+    }
+
+    public function getLevelAttribute()
+    {
+        return $this->studentClass ? $this->studentClass->level : null;
+    }
 
     /**
      * Relasi untuk mengecek histori alokasi ujian siswa.
-     * Digunakan di Wizard Step 3 untuk memfilter siswa yang belum dapat ruangan.
      */
     public function allocations()
     {

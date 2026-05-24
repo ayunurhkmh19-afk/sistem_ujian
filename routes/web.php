@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\WizardController;
 use App\Http\Controllers\PrintController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\ExamSessionController;
@@ -40,21 +39,26 @@ Route::middleware('auth')->group(function () {
 */
 Route::middleware(['auth', 'role:panitia'])->group(function () {
 
-    // --- 1. WIZARD (ALUR PEMBUATAN KARTU) ---
-    // Step 1: Upload & Buat Sesi
-    Route::get('/wizard/start', [WizardController::class, 'step1'])->name('wizard.step1');
-    Route::post('/wizard/start', [WizardController::class, 'storeStep1']);
+    // --- 1. WIZARD 5-STEP (OVERHAUL V2) ---
+    // Step 1: Info Ujian
+    Route::get('/wizard/start', [\App\Http\Controllers\ExamSessionWizardController::class, 'step1'])->name('wizard.step1');
+    Route::post('/wizard/start', [\App\Http\Controllers\ExamSessionWizardController::class, 'storeStep1'])->name('wizard.storeStep1');
 
-    // Step 2: Setup Ruangan
-    Route::get('/wizard/{session}/rooms', [WizardController::class, 'step2'])->name('wizard.step2');
-    Route::post('/wizard/{session}/rooms', [WizardController::class, 'storeStep2']);
+    // Step 2: Checklist Mapel
+    Route::get('/wizard/{session}/subjects', [\App\Http\Controllers\ExamSessionWizardController::class, 'step2'])->name('wizard.step2');
+    Route::post('/wizard/{session}/subjects', [\App\Http\Controllers\ExamSessionWizardController::class, 'storeStep2'])->name('wizard.storeStep2');
 
-    // Step 3: Distribusi Siswa
-    Route::get('/wizard/{session}/distribute', [WizardController::class, 'step3'])->name('wizard.step3');
-    Route::post('/wizard/{session}/distribute', [WizardController::class, 'storeStep3']);
-    
-    // Reset Ruangan (Hapus isinya saja)
-    Route::delete('/wizard/{session}/room/{room}/reset', [WizardController::class, 'resetRoom'])->name('wizard.resetRoom');
+    // Step 3: Setup Ruangan & Sesi Waktu
+    Route::get('/wizard/{session}/rooms-times', [\App\Http\Controllers\ExamSessionWizardController::class, 'step3'])->name('wizard.step3');
+    Route::post('/wizard/{session}/rooms-times', [\App\Http\Controllers\ExamSessionWizardController::class, 'storeStep3'])->name('wizard.storeStep3');
+
+    // Step 4: Import Siswa
+    Route::get('/wizard/{session}/students', [\App\Http\Controllers\ExamSessionWizardController::class, 'step4'])->name('wizard.step4');
+    Route::post('/wizard/{session}/students', [\App\Http\Controllers\ExamSessionWizardController::class, 'storeStep4'])->name('wizard.storeStep4');
+
+    // Step 5: Pre-flight & Eksekusi AG
+    Route::get('/wizard/{session}/generate', [\App\Http\Controllers\ExamSessionWizardController::class, 'step5'])->name('wizard.step5');
+    Route::post('/wizard/{session}/generate', [\App\Http\Controllers\ExamSessionWizardController::class, 'executeAG'])->name('wizard.execute');
 
 
     // --- 2. CETAK KARTU (PDF) ---
@@ -80,6 +84,12 @@ Route::middleware(['auth', 'role:panitia'])->group(function () {
     Route::post('/master_rooms/sync', [\App\Http\Controllers\MasterRoomController::class, 'syncFromHistory'])->name('master_rooms.sync');
     Route::resource('master_rooms', \App\Http\Controllers\MasterRoomController::class);
 
+    // Master Data Baru (V2)
+    Route::resource('levels', \App\Http\Controllers\LevelController::class);
+    Route::resource('student_classes', \App\Http\Controllers\StudentClassController::class);
+    Route::resource('subjects', \App\Http\Controllers\SubjectController::class);
+    Route::resource('time_sessions', \App\Http\Controllers\TimeSessionController::class);
+
 
     // --- 4. MANAJEMEN JADWAL (FULLCALENDAR) ---
     
@@ -91,6 +101,11 @@ Route::middleware(['auth', 'role:panitia'])->group(function () {
     Route::post('/sessions/{session}/schedules', [ExamScheduleController::class, 'store'])->name('sessions.schedules.store');
     Route::put('/sessions/{session}/schedules/{schedule}', [ExamScheduleController::class, 'update'])->name('sessions.schedules.update');
     Route::delete('/sessions/{session}/schedules/{schedule}', [ExamScheduleController::class, 'destroy'])->name('sessions.schedules.destroy');
+
+    // --- 5. KEPENGAWASAN & MONITORING (V2) ---
+    Route::get('/sessions/{session}/supervisors', [\App\Http\Controllers\SupervisorController::class, 'index'])->name('sessions.supervisors.index');
+    Route::post('/supervisors/assign', [\App\Http\Controllers\SupervisorController::class, 'assign'])->name('supervisors.assign');
+    Route::get('/schedules/{schedule}/room/{room}/report', [\App\Http\Controllers\SupervisorController::class, 'showReport'])->name('schedules.report.show');
 
 });
 
@@ -104,7 +119,7 @@ Route::middleware(['auth', 'role:pengawas'])->prefix('pengawas')->name('pengawas
     Route::get('/dashboard', [\App\Http\Controllers\Pengawas\DashboardController::class, 'index'])->name('dashboard');
     
     // Detail Sesi (Absensi + Berita Acara)
-    Route::get('/sesi/{session_id}/ruang/{room_id}', [\App\Http\Controllers\Pengawas\SessionController::class, 'show'])->name('sesi.detail');
+    Route::get('/sesi/{schedule_id}/ruang/{room_id}', [\App\Http\Controllers\Pengawas\SessionController::class, 'show'])->name('sesi.detail');
     Route::post('/absensi', [\App\Http\Controllers\Pengawas\SessionController::class, 'storeAttendance'])->name('absensi.store');
     Route::post('/report', [\App\Http\Controllers\Pengawas\SessionController::class, 'storeReport'])->name('report.store');
 });

@@ -14,9 +14,11 @@ class PrintController extends Controller
      */
     public function printAll(ExamSession $session)
     {
-        // Ambil data alokasi, urutkan berdasarkan ruangan lalu nomor meja
-        $allocations = ExamAllocation::with(['student', 'room'])
-            ->where('exam_session_id', $session->id)
+        // Ambil data alokasi yang terikat ke jadwal sesi ini, urutkan berdasarkan ruangan lalu nomor meja
+        $allocations = ExamAllocation::with(['student.studentClass.level', 'room', 'schedule.subject', 'schedule.timeSession'])
+            ->whereHas('schedule', function ($q) use ($session) {
+                $q->where('exam_session_id', $session->id);
+            })
             ->orderBy('room_id')
             ->orderBy('desk_number')
             ->get();
@@ -38,8 +40,10 @@ class PrintController extends Controller
      */
     public function printByRoom(ExamSession $session, $roomId)
     {
-        $allocations = ExamAllocation::with(['student', 'room'])
-            ->where('exam_session_id', $session->id)
+        $allocations = ExamAllocation::with(['student.studentClass.level', 'room', 'schedule.subject', 'schedule.timeSession'])
+            ->whereHas('schedule', function ($q) use ($session) {
+                $q->where('exam_session_id', $session->id);
+            })
             ->where('room_id', $roomId)
             ->orderBy('desk_number')
             ->get();

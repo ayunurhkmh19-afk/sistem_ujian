@@ -1,0 +1,413 @@
+# Migrasi Skema V2: Multi-Tingkatan & Algoritma Genetika Multi-Dimensi
+
+Migrasi total dari sistem penjadwalan ujian V1 (sederhana, 1 sesi global, alokasi ruang manual/AG flat) ke Skema V2 (multi-tingkatan kelas, multi-sesi waktu per hari, AG multi-dimensi dengan distribusi mapel otomatis).
+
+## Analisis Gap: State Saat Ini vs Target
+
+### State Saat Ini (V1)
+| Komponen | Kondisi |
+|----------|---------|
+| **Database** | `exam_sessions` tanpa `end_date`. `exam_schedules` pakai `subject_name` (string) bukan FK. `exam_allocations` terikat ke `exam_session_id` bukan `exam_schedule_id`. Tidak ada tabel `levels`, `subjects`, `time_sessions`, `student_classes` |
+| **Student** | Field `class` sebagai string bebas. Tidak ada `level_id` atau `student_class_id` |
+| **Wizard** | 3 step saja: Inisiasi → Ruangan → Distribusi Manual. Tidak ada pemilihan mapel, sesi waktu, atau pre-flight check |
+| **AG Service** | Flat: Gen hanya `[student_id, room_id, desk_number]`. Tidak mengenal hari, sesi, mapel, atau level. Single-point crossover |
+| **Supervisor** | `room_supervisors` terikat ke `exam_session_id` (global), bukan per jadwal |
+| **Attendance/Report** | `student_attendances` dan `exam_reports` terikat ke `exam_session_id` |
+
+### Target (V2)
+| Komponen | Target |
+|----------|--------|
+| **Database** | Tabel master baru: `levels`, `student_classes`, `subjects`, `time_sessions`. `exam_sessions` + `end_date`. `exam_schedules` dirombak total (FK ke `subject_id`, `time_session_id`, + `exam_date`). `exam_allocations` terikat ke `exam_schedule_id` |
+| **Student** | Terikat ke `student_class_id` → `level_id` (hierarki tingkatan) |
+| **Wizard** | 5 step: Inisiasi → Pilih Mapel → Setup Ruang & Waktu → Import Siswa → Pre-flight + Eksekusi AG |
+| **AG Service** | Multi-dimensi: Gen = `[student_id, level_id, subject_id, day_index, time_session_id, room_id, desk_number]`. Uniform crossover, targeted mutation, hard+soft constraints |
+| **Supervisor** | `room_supervisors` terikat ke `exam_schedule_id` (per jadwal spesifik) |
+| **Attendance/Report** | Terikat ke `exam_schedule_id` |
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Breaking Change — Fresh Migration Diperlukan**
+> Perubahan skema ini sangat besar dan menyentuh hampir semua tabel inti. Rekomendasi: jalankan `php artisan migrate:fresh --seed` setelah semua migration baru dibuat. Data lama **akan hilang**. Pastikan backup jika ada data penting.
+
+> [!WARNING]
+> **Perubahan Relasi Fundamental**
+> - `exam_allocations` berpindah dari `exam_session_id` → `exam_schedule_id`
+> - `room_supervisors` berpindah dari `exam_session_id` → `exam_schedule_id`
+> - `student_attendances` berpindah dari `exam_session_id` → `exam_schedule_id`
+> - `exam_reports` berpindah dari `exam_session_id` → `exam_schedule_id`
+> - `students.class` (string) → `students.student_class_id` (FK)
+> 
+> Semua controller, model, view yang merujuk relasi lama harus diperbarui.
+
+> [!CAUTION]
+> **Algoritma Genetika di-rewrite Total**
+> AG V1 (flat, hanya room+desk) akan diganti sepenuhnya dengan AG V2 (multi-dimensi: hari, sesi, mapel, level, room, desk). Ini bukan modifikasi — ini penulisan ulang lengkap.
+
+## Keputusan Desain (Resolved)
+
+> [!NOTE]
+> Semua pertanyaan desain telah dijawab. Berikut keputusan final:
+
+| # | Pertanyaan | Keputusan |
+|---|------------|----------|
+| 1 | **Data Siswa Lama** | **Fresh import** via Wizard. Tidak migrasi data lama — hindari inkonsistensi string nama kelas dan jamin integritas FK |
+| 2 | **Jumlah Pengawas per Ruangan** | **Multi-pengawas didukung** arsitekturnya via tabel pivot. Frontend disesuaikan ke **multi-select** untuk ruangan besar (aula). Tidak perlu perubahan skema DB |
+| 3 | **Queue Driver** | **WAJIB** pakai `database` (lokal) atau `redis` (produksi). **DILARANG** pakai `sync` — akan menyebabkan timeout browser |
+| 4 | **Parameter AG** | `maxGenerations = 100`, `populationSize = 20-30`, Job `timeout = 300` detik (5 menit), naikkan `memory_limit` PHP. Skill Agent + targeted mutation membuat pencarian solusi jauh lebih cepat |
+
+---
+
+## Proposed Changes
+
+### Fase 1: Database & Queue Config — Tabel Master Baru & Migrasi Skema
+
+Fondasi data harus dibangun terlebih dahulu sebelum komponen lain.
+
+> [!IMPORTANT]
+> **Konfigurasi Queue Wajib:**
+> - Set `QUEUE_CONNECTION=database` di `.env` (lokal) atau `QUEUE_CONNECTION=redis` (produksi)
+> - Jalankan `php artisan queue:table && php artisan migrate` jika belum ada tabel jobs
+> - Jalankan worker: `php artisan queue:work --timeout=300 --memory=512`
+> - Set `memory_limit = 512M` di `php.ini` (atau via `.htaccess`/`php artisan` flag)
+
+---
+
+#### [NEW] create_levels_table migration
+Tabel tingkatan kelas (Kelas 10, 11, 12).
+
+```php
+Schema::create('levels', function (Blueprint $table) {
+    $table->id();
+    $table->string('name'); // "Kelas 10", "Kelas 11", "Kelas 12"
+    $table->timestamps();
+});
+```
+
+#### [NEW] create_student_classes_table migration
+Kelas spesifik terikat ke tingkatan.
+
+```php
+Schema::create('student_classes', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('level_id')->constrained()->cascadeOnDelete();
+    $table->string('name'); // "10 IPA 1", "11 IPS 2"
+    $table->timestamps();
+});
+```
+
+#### [NEW] create_subjects_table migration
+Mata pelajaran terikat ke tingkatan.
+
+```php
+Schema::create('subjects', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('level_id')->constrained()->cascadeOnDelete();
+    $table->string('name'); // "Matematika", "Fisika"
+    $table->timestamps();
+});
+```
+
+#### [NEW] create_time_sessions_table migration
+Sesi waktu ujian per hari.
+
+```php
+Schema::create('time_sessions', function (Blueprint $table) {
+    $table->id();
+    $table->string('name');       // "Sesi 1", "Sesi 2"
+    $table->time('start_time');   // 09:00
+    $table->time('end_time');     // 11:00
+    $table->timestamps();
+});
+```
+
+#### [MODIFY] [students migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2025_11_19_131818_create_students_table.php)
+Tambah `student_class_id` FK, hapus kolom `class` string.
+
+#### [MODIFY] [exam_sessions migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2025_11_19_131918_create_exam_sessions_table.php)
+Tambah `end_date` setelah `start_date`.
+
+#### [MODIFY] [exam_schedules migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2025_11_19_134148_create_exam_schedules_table.php)
+Re-create total: hapus `subject_name`, `start_time`, `end_time`. Ganti dengan `subject_id` FK, `time_session_id` FK, `exam_date`.
+
+#### [MODIFY] [exam_allocations migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2025_11_19_132043_create_exam_allocations_table.php)
+Ganti `exam_session_id` → `exam_schedule_id` FK.
+
+#### [MODIFY] [room_supervisors migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2026_05_11_081504_create_room_supervisors_table.php)
+Ganti `exam_session_id` → `exam_schedule_id` FK.
+
+#### [MODIFY] [student_attendances migration](file:///c:/laragon/www/kartu-ujian-app/database/migrations/2026_05_11_081508_create_student_attendances_table.php)
+Ganti `exam_session_id` → `exam_schedule_id` FK.
+
+#### [NEW] Pivot table: `exam_session_subject`
+Menyimpan mapel yang dipilih panitia di Step 2 Wizard.
+
+#### [NEW] Pivot table: `exam_session_room`
+Menyimpan ruangan yang dipilih di Step 3 Wizard (ruangan kini global, bukan per-sesi).
+
+#### [NEW] Pivot table: `exam_session_time_session`
+Menyimpan sesi waktu yang diaktifkan di Step 3 Wizard.
+
+#### [MODIFY] Tabel `rooms`
+Rooms menjadi global (hapus `exam_session_id`). Gunakan pivot `exam_session_room` untuk relasi.
+
+---
+
+### Fase 2: Eloquent Models — Update Relasi
+
+Semua model harus diperbarui agar sesuai skema V2.
+
+---
+
+#### [NEW] `app/Models/Level.php`
+Relasi: `hasMany(StudentClass)`, `hasMany(Subject)`.
+
+#### [NEW] `app/Models/StudentClass.php`
+Relasi: `belongsTo(Level)`, `hasMany(Student)`.
+
+#### [NEW] `app/Models/Subject.php`
+Relasi: `belongsTo(Level)`, `belongsToMany(ExamSession)`.
+
+#### [NEW] `app/Models/TimeSession.php`
+Relasi: `belongsToMany(ExamSession)`, `hasMany(ExamSchedule)`.
+
+#### [MODIFY] [Student.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/Student.php)
+- Hapus field `class` dari fillable
+- Tambah `student_class_id` ke fillable
+- Tambah relasi `belongsTo(StudentClass)`, accessor `level` via class
+
+#### [MODIFY] [ExamSession.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/ExamSession.php)
+- Tambah `end_date` ke fillable
+- Tambah relasi `belongsToMany(Subject)`, `belongsToMany(Room)`, `belongsToMany(TimeSession)`
+- Update relasi `schedules()` (hilangkan orderBy `start_time`, ganti dengan relasi `timeSession`)
+
+#### [MODIFY] [ExamSchedule.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/ExamSchedule.php)
+- Fillable: `exam_session_id`, `subject_id`, `time_session_id`, `exam_date`
+- Relasi: `belongsTo(Subject)`, `belongsTo(TimeSession)`, `hasMany(ExamAllocation)`, `hasMany(RoomSupervisor)`
+
+#### [MODIFY] [ExamAllocation.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/ExamAllocation.php)
+- Ganti `exam_session_id` → `exam_schedule_id` di fillable
+- Relasi `session()` → `schedule()` (belongsTo ExamSchedule)
+
+#### [MODIFY] [Room.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/Room.php)
+- Hapus `exam_session_id` dari fillable (rooms kini global)
+- Tambah relasi `belongsToMany(ExamSession)`
+
+#### [MODIFY] [RoomSupervisor.php](file:///c:/laragon/www/kartu-ujian-app/app/Models/RoomSupervisor.php)
+- Ganti `exam_session_id` → `exam_schedule_id`
+- Relasi: `belongsTo(ExamSchedule)` bukan `belongsTo(ExamSession)`
+
+---
+
+### Fase 3: Master Data CRUD (Fitur Baru)
+
+Panitia perlu mengelola data master sebelum membuat ujian.
+
+---
+
+#### [NEW] `app/Http/Controllers/Panitia/MasterDataController.php`
+Controller untuk CRUD: Levels, StudentClasses, Subjects, TimeSessions, Rooms (global).
+
+#### [NEW] `resources/views/panitia/master/levels/index.blade.php`
+DataTable CRUD tingkatan kelas.
+
+#### [NEW] `resources/views/panitia/master/student_classes/index.blade.php`
+DataTable CRUD kelas per tingkatan.
+
+#### [NEW] `resources/views/panitia/master/subjects/index.blade.php`
+DataTable CRUD mata pelajaran per tingkatan.
+
+#### [NEW] `resources/views/panitia/master/time_sessions/index.blade.php`
+DataTable CRUD sesi waktu.
+
+#### [MODIFY] `resources/views/panitia/master/rooms/index.blade.php`
+Rooms kini global (bukan per-sesi). Modifikasi dari halaman master room yang sudah ada.
+
+#### [MODIFY] [web.php](file:///c:/laragon/www/kartu-ujian-app/routes/web.php)
+Tambah route resource untuk semua master data di group panitia.
+
+---
+
+### Fase 4: Wizard 5-Step (Overhaul Total)
+
+Wizard lama (3 step) dirombak total menjadi 5 step sesuai skema baru.
+
+---
+
+#### [MODIFY] [WizardController.php](file:///c:/laragon/www/kartu-ujian-app/app/Http/Controllers/WizardController.php)
+Re-write menjadi `ExamSessionWizardController.php` dengan 5 step:
+
+| Step | Fungsi | Keterangan |
+|------|--------|------------|
+| 1 | `step1()` / `storeStep1()` | Input nama ujian + rentang tanggal (`start_date` — `end_date`) |
+| 2 | `step2()` / `storeStep2()` | Checklist mapel per tingkatan. Simpan ke pivot `exam_session_subject` |
+| 3 | `step3()` / `storeStep3()` | Checklist ruangan + sesi waktu. Simpan ke pivot |
+| 4 | `step4()` / `storeStep4()` | Import siswa via Excel. Summary card per tingkatan |
+| 5 | `step5()` / `executeAG()` | **Pre-flight check** + tombol eksekusi AG |
+
+#### Pre-Flight Check (Step 5) — Logika Validasi Kritis
+
+```
+JIKA (Total_Kapasitas_Ruang × Jumlah_Sesi_Waktu) < Total_Siswa_Angkatan_Terbesar
+   → TOLAK eksekusi AG
+   → Tampilkan error merah
+```
+
+#### [NEW] `resources/views/panitia/sessions/wizard/step_1_info.blade.php`
+#### [NEW] `resources/views/panitia/sessions/wizard/step_2_subjects.blade.php`
+#### [NEW] `resources/views/panitia/sessions/wizard/step_3_rooms_times.blade.php`
+#### [NEW] `resources/views/panitia/sessions/wizard/step_4_students.blade.php`
+#### [NEW] `resources/views/panitia/sessions/wizard/step_5_generate.blade.php`
+
+---
+
+### Fase 5: Algoritma Genetika V2 (Re-write Total) ⚠️ CORE
+
+**Ini adalah jantung perubahan.** AG V1 hanya mengatur `[student, room, desk]`. AG V2 mengatur `[student, level, subject, day, time_session, room, desk]`.
+
+---
+
+#### [MODIFY] [GeneticAlgorithmService.php](file:///c:/laragon/www/kartu-ujian-app/app/Services/GeneticAlgorithmService.php)
+
+**Rewrite total.** Perubahan utama:
+
+| Aspek | V1 (Saat Ini) | V2 (Target) |
+|-------|---------------|-------------|
+| **Gen** | `{student_id, room_id, desk}` | `{student_id, level_id, subject_id, day_index, time_session_id, room_id, desk}` |
+| **Populasi Init** | Acak room + desk | Acak day + session + room + desk, dengan distribusi proporsional per level |
+| **Fitness** | Cek overcapacity + desk collision saja | + Level mixing, student collision (bentrok waktu), subject scattering, room underutilization |
+| **Crossover** | Single-point | **Uniform crossover** (50/50 per gen) |
+| **Mutasi** | Acak buta (room + desk) | **Targeted mutation** (ubah waktu jika bentrok waktu, ubah ruang jika overcapacity) |
+| **Hard Constraints** | 2 jenis (+100) | 4 jenis (+100): Overcapacity, Level Mixing, Student Collision, Desk Collision |
+| **Soft Constraints** | Tidak ada | 2 jenis: Subject Scattering (+10), Room Underutilization (+5) |
+| **Proporsi Ruangan** | Tidak ada | Ruangan dialokasikan utuh per level, bukan dicampur |
+
+> [!IMPORTANT]
+> **Parameter AG yang dioptimalkan (keputusan user):**
+> ```php
+> protected $populationSize = 25;    // Turun dari 100 → 25 (cukup karena targeted mutation)
+> protected $maxGenerations = 100;   // Turun dari 1000 → 100 (Skill Agent mempercepat konvergensi)
+> protected $mutationRate = 0.10;    // Tetap 10%
+> ```
+> Alasan: Dengan Skill Agent (targeted mutation + repair function + heuristik inisialisasi), pencarian solusi jauh lebih efisien sehingga tidak perlu populasi/generasi besar.
+
+**Fungsi baru yang harus dibuat:**
+1. `initializePopulation()` — Multi-dimensi, distribusi mapel proporsional + heuristik round-robin
+2. `evaluateFitness()` — 4 hard + 2 soft constraints (lihat detail di Skill Agent)
+3. `uniformCrossover()` — Ganti single-point
+4. `targetedMutate()` — Mutasi cerdas berdasarkan jenis pelanggaran
+5. `repair()` — Perbaiki desk collision dan overcapacity sederhana pasca-crossover
+6. `translateToDatabase()` — Konversi gen terbaik → `exam_schedules` + `exam_allocations`
+
+#### [MODIFY] [GenerateAllocationJob.php](file:///c:/laragon/www/kartu-ujian-app/app/Jobs/GenerateAllocationJob.php)
+Update untuk:
+- **`$timeout = 300`** (naik dari 120 → 300 detik / 5 menit)
+- Membersihkan `exam_schedules` + `exam_allocations` (bukan hanya allocations)
+- Memanggil `translateToDatabase()` dari AG service
+- Menyimpan ke `exam_schedules` dulu, baru `exam_allocations`
+- Pastikan queue connection **bukan** `sync`
+
+---
+
+### Fase 6: Manajemen Kepengawasan & Monitoring
+
+Setelah AG selesai, panitia menugaskan pengawas ke hasil jadwal.
+
+---
+
+#### [NEW] `app/Http/Controllers/Panitia/SupervisorController.php`
+- `index($session_id)` — Matriks jadwal + **multi-select** pengawas (mendukung >1 pengawas per ruangan, misal aula)
+- `assign(Request)` — Bulk insert/sync `RoomSupervisor` (bukan `updateOrCreate` tunggal, karena multi-pengawas)
+- `showReport($schedule_id, $room_id)` — Laporan read-only
+
+#### [NEW] `resources/views/panitia/supervisors/index.blade.php`
+UI matriks nested table: Tanggal → Sesi → Mapel → Ruangan → **Multi-select Pengawas** (bisa pilih >1 untuk ruangan besar) + Status Laporan (⚪🟡🟢)
+
+#### [NEW] `resources/views/panitia/supervisors/report_detail.blade.php`
+Halaman read-only: Info jadwal, Rekap Kehadiran, Berita Acara.
+
+#### [NEW] `resources/views/panitia/sessions/schedules_result.blade.php`
+Matriks time-table hasil AG (Hari × Sesi Waktu × Mapel × Ruangan).
+
+---
+
+### Fase 7: Update Area Pengawas
+
+Dashboard dan form absensi pengawas harus mengikuti relasi baru.
+
+---
+
+#### [MODIFY] `app/Http/Controllers/Pengawas/DashboardController.php`
+Query melalui `exam_schedule_id` bukan `exam_session_id`. Kartu jadwal menampilkan info spesifik: Mapel, Ruang, Sesi Waktu.
+
+#### [MODIFY] `app/Http/Controllers/Pengawas/SessionController.php`
+Form absensi mengunci per `exam_schedule_id` + `room_id` (per mapel/sesi), bukan per hari penuh.
+
+#### [MODIFY] `resources/views/pengawas/dashboard.blade.php`
+Kartu jadwal lebih spesifik + indikator status berdasarkan waktu sesi.
+
+#### [MODIFY] `resources/views/pengawas/sesi_detail.blade.php`
+Form absensi + berita acara merujuk ke `exam_schedule_id`.
+
+---
+
+## Skill Agent: Validator Perhitungan AG
+
+> [!IMPORTANT]
+> **Skill Agent khusus dibuat untuk memvalidasi setiap aspek perhitungan AG** agar tidak ada kesalahan logika yang terlewat. Dokumen skill agent terpisah akan dibuat di `skill_agent_ag_validator.md`.
+
+Skill agent ini bertugas:
+
+1. **Validasi Pre-Flight Check** — Memastikan formula `(Total_Kapasitas × Jumlah_Sesi) >= Angkatan_Terbesar` benar
+2. **Validasi Inisialisasi Populasi** — Memastikan setiap siswa mendapat gen untuk SETIAP mapel yang mereka ikuti
+3. **Validasi Fitness Function** — Cross-check setiap constraint satu per satu:
+   - Overcapacity: `count(students in [day][session][room]) <= room.capacity`
+   - Level Mixing: `unique(level_id in [day][session][room]) == 1`
+   - Student Collision: `count(subjects per student in [day][session]) <= 1`
+   - Desk Collision: `unique(desk in [day][session][room])`
+   - Subject Scattering: `count(sessions per subject) <= 2`
+   - Room Underutilization: `occupancy >= 30% capacity`
+4. **Validasi Translasi ke DB** — Memastikan tidak ada gen yang hilang saat konversi
+5. **Validasi Crossover & Mutasi** — Memastikan invariant tetap terjaga
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+```bash
+# 1. Migrasi berhasil tanpa error
+php artisan migrate:fresh --seed
+
+# 2. Unit test untuk AG fitness function
+php artisan test --filter=GeneticAlgorithmTest
+
+# 3. Unit test untuk pre-flight check
+php artisan test --filter=PreFlightCheckTest
+```
+
+### Manual Verification
+
+1. **Wizard Flow**: Jalankan 5 step secara manual, pastikan data tersimpan di setiap pivot table
+2. **AG Execution**: Trigger AG dengan data sample (3 level, 10 mapel, 300 siswa, 6 ruangan, 3 sesi). Verifikasi:
+   - Tidak ada siswa beda level di ruangan yang sama pada waktu yang sama
+   - Tidak ada siswa ujian 2 mapel di waktu yang sama
+   - Tidak ada meja duplikat
+   - Semua siswa mendapat alokasi untuk semua mapelnya
+3. **Supervisor Assignment**: Assign pengawas via dropdown, verifikasi data tersimpan di `room_supervisors` dengan `exam_schedule_id`
+4. **Pengawas Dashboard**: Login sebagai pengawas, verifikasi kartu jadwal menampilkan info spesifik (mapel + sesi waktu)
+
+### Urutan Pengerjaan (Prioritas)
+
+```mermaid
+graph TD
+    A["Fase 1: Database Migration"] --> B["Fase 2: Model Update"]
+    B --> C["Fase 3: Master Data CRUD"]
+    C --> D["Fase 4: Wizard 5-Step"]
+    D --> E["Fase 5: AG V2 Rewrite ⚠️"]
+    E --> F["Fase 6: Supervisor Management"]
+    F --> G["Fase 7: Pengawas Dashboard"]
+```

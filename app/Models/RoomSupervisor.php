@@ -9,7 +9,7 @@ class RoomSupervisor extends Model
 {
     protected $fillable = [
         'user_id',
-        'exam_session_id',
+        'exam_schedule_id',
         'room_id',
     ];
 
@@ -18,9 +18,9 @@ class RoomSupervisor extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function examSession(): BelongsTo
+    public function schedule(): BelongsTo
     {
-        return $this->belongsTo(ExamSession::class);
+        return $this->belongsTo(ExamSchedule::class, 'exam_schedule_id');
     }
 
     public function room(): BelongsTo

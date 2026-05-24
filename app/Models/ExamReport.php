@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ExamReport extends Model
 {
     protected $fillable = [
-        'exam_session_id',
+        'exam_schedule_id',
         'room_id',
         'user_id',
         'total_present',
@@ -17,9 +17,9 @@ class ExamReport extends Model
         'status',
     ];
 
-    public function examSession(): BelongsTo
+    public function schedule(): BelongsTo
     {
-        return $this->belongsTo(ExamSession::class);
+        return $this->belongsTo(ExamSchedule::class, 'exam_schedule_id');
     }
 
     public function room(): BelongsTo

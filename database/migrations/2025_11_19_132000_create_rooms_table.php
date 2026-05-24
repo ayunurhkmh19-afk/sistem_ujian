@@ -10,16 +10,14 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-{
-    Schema::create('rooms', function (Blueprint $table) {
-        $table->id();
-        // Terhubung ke sesi ujian tertentu
-        $table->foreignId('exam_session_id')->constrained()->onDelete('cascade');
-        $table->string('name'); // Misal: "Ruang 01"
-        $table->integer('capacity'); // Untuk validasi range siswa
-        $table->timestamps();
-    });
-}
+    {
+        Schema::create('rooms', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique(); // Ruang kini global dan unik
+            $table->integer('capacity');
+            $table->timestamps();
+        });
+    }
 
     /**
      * Reverse the migrations.

@@ -13,26 +13,26 @@ class DashboardController extends Controller
     {
         $now = Carbon::now();
 
-        // 1. Ambil jadwal milik pengawas login
-        // Eager load schedules karena kita butuh info waktu ujian.
-        // Karena di SMAN 3 Bontang 1 Sesi = 1 Mapel, maka schedules->first() 
-        // akan selalu mengarah ke mata pelajaran yang tepat untuk sesi tersebut.
-        $semuaJadwal = RoomSupervisor::with(['examSession.schedules', 'room'])
+        // 1. Ambil jadwal milik pengawas login (V2)
+        $semuaJadwal = RoomSupervisor::with(['schedule.subject.level', 'schedule.timeSession', 'room'])
             ->where('user_id', Auth::id())
             ->get();
 
         // 2. Mapping data untuk menyuntikkan properti 'status_sesi'
         $jadwalDiolah = $semuaJadwal->map(function ($jadwal) use ($now) {
-            $schedule = $jadwal->examSession->schedules->first(); 
+            $schedule = $jadwal->schedule; 
 
             if (!$schedule) {
                 $jadwal->status_sesi = 'Belum Dijadwalkan';
                 return $jadwal;
             }
 
-            // Gabungkan tanggal dan waktu
-            $startDateTime = Carbon::parse($schedule->exam_date->format('Y-m-d') . ' ' . $schedule->start_time->format('H:i:s'));
-            $endDateTime = Carbon::parse($schedule->exam_date->format('Y-m-d') . ' ' . $schedule->end_time->format('H:i:s'));
+            // Gabungkan tanggal dan waktu dari timeSession
+            $startStr = $schedule->exam_date->format('Y-m-d') . ' ' . $schedule->timeSession->start_time;
+            $endStr = $schedule->exam_date->format('Y-m-d') . ' ' . $schedule->timeSession->end_time;
+            
+            $startDateTime = Carbon::parse($startStr);
+            $endDateTime = Carbon::parse($endStr);
 
             // Kondisional Status Sesi
             if ($now->lt($startDateTime)) {
@@ -48,7 +48,7 @@ class DashboardController extends Controller
 
         // 3. Kalkulasi data untuk Quick Menu
         $countHariIni = $jadwalDiolah->filter(function($j) use ($now) {
-            $schedule = $j->examSession->schedules->first();
+            $schedule = $j->schedule;
             return $schedule ? $schedule->exam_date->isToday() : false;
         })->count();
 

@@ -3,23 +3,35 @@
 namespace App\Http\Controllers;
 
 use App\Models\Student;
+use App\Models\StudentClass;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Student::query();
+        $query = Student::query()->with([
+            'studentClass.level',
+            'allocations.room',
+            'allocations.schedule.session',
+            'allocations.schedule.subject'
+        ]);
 
-        if ($request->has('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%')
-                  ->orWhere('nis', 'like', '%' . $request->search . '%')
-                  ->orWhere('class', 'like', '%' . $request->search . '%');
+        if ($request->has('search') && !empty($request->search)) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                  ->orWhere('nis', 'like', '%' . $search . '%')
+                  ->orWhereHas('studentClass', function ($sq) use ($search) {
+                      $sq->where('name', 'like', '%' . $search . '%');
+                  });
+            });
         }
 
-        $students = $query->orderBy('class')->orderBy('name')->paginate(20);
+        $students = $query->orderBy('student_class_id')->orderBy('name')->paginate(20);
+        $classes = StudentClass::with('level')->orderBy('name')->get();
 
-        return view('admin.students.index', compact('students'));
+        return view('admin.students.index', compact('students', 'classes'));
     }
 
     public function store(Request $request)
@@ -27,7 +39,7 @@ class StudentController extends Controller
         $validated = $request->validate([
             'nis' => 'required|numeric|digits:10|unique:students,nis',
             'name' => 'required|string|max:255',
-            'class' => 'required|string|max:50',
+            'student_class_id' => 'required|exists:student_classes,id',
         ]);
 
         Student::create($validated);
@@ -35,19 +47,18 @@ class StudentController extends Controller
         return back()->with('success', 'Siswa berhasil ditambahkan.');
     }
 
-    // --- TAMBAHKAN METHOD INI ---
     public function edit(Student $student)
     {
-        return view('admin.students.edit', compact('student'));
+        $classes = StudentClass::with('level')->orderBy('name')->get();
+        return view('admin.students.edit', compact('student', 'classes'));
     }
-    // ----------------------------
 
     public function update(Request $request, Student $student)
     {
         $validated = $request->validate([
             'nis' => 'required|numeric|digits:10|unique:students,nis,' . $student->id,
             'name' => 'required|string|max:255',
-            'class' => 'required|string|max:50',
+            'student_class_id' => 'required|exists:student_classes,id',
         ]);
 
         $student->update($validated);

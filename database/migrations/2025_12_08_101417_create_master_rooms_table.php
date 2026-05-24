@@ -1,29 +1,16 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('master_rooms', function (Blueprint $table) {
-            $table->id();
-            $table->string('name')->unique();
-            $table->integer('capacity');
-            $table->timestamps();
-        });
+        // Obsolesced in V2. Rooms is now the global rooms table.
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('master_rooms');
+        // Do nothing
     }
 };
