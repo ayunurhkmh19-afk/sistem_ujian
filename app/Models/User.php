@@ -51,4 +51,19 @@ class User extends Authenticatable
     {
         return $this->hasMany(RoomSupervisor::class, 'user_id');
     }
+
+    public function examReports()
+    {
+        return $this->hasMany(ExamReport::class, 'user_id');
+    }
+
+    public function isPanitia(): bool
+    {
+        return $this->role === 'panitia';
+    }
+
+    public function isPengawas(): bool
+    {
+        return $this->role === 'pengawas';
+    }
 }

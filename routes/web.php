@@ -68,6 +68,9 @@ Route::middleware(['auth', 'role:panitia'])->group(function () {
 
     // --- 3. MANAJEMEN DATA (CRUD) ---
     
+    // Manajemen User (Panitia & Pengawas)
+    Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show']);
+
     // Siswa
     Route::resource('students', StudentController::class)->except(['show']);
 

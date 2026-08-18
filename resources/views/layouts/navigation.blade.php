@@ -139,6 +139,12 @@
                           :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Data Siswa</span>
                 </x-nav-link-glass>
 
+                <!-- Manajemen User (Panitia & Pengawas) -->
+                <x-nav-link-glass :href="route('users.index')" :active="request()->routeIs('users.*')" icon="shield">
+                    <span class="whitespace-nowrap transition-opacity duration-200" 
+                          :class="sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'ml-3 opacity-100'">Manajemen User</span>
+                </x-nav-link-glass>
+
             @endif
 
             <!-- Divider -->

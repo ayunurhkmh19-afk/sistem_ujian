@@ -27,17 +27,17 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         
         <a href="{{ route('students.index') }}" class="group bg-white/40 backdrop-blur-lg border border-white/50 p-6 rounded-[2rem] shadow-lg hover:bg-white/60 transition-all hover:-translate-y-1">
             <div class="flex justify-between items-start mb-4">
                 <div class="p-3 rounded-2xl bg-teal-100 text-teal-600 group-hover:bg-teal-500 group-hover:text-white transition-colors shadow-sm">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                 </div>
-                <span class="px-3 py-1 rounded-full bg-white/50 border border-white/50 text-xs font-bold text-teal-800">Master Data</span>
+                <span class="px-3 py-1 rounded-full bg-white/50 border border-white/50 text-xs font-bold text-teal-800">Siswa</span>
             </div>
             <h3 class="text-3xl font-black text-emerald-900">{{ \App\Models\Student::count() }}</h3>
-            <p class="text-emerald-800/70 font-medium">Total Siswa Terdaftar</p>
+            <p class="text-emerald-800/70 font-medium text-xs mt-1">Total Siswa Terdaftar</p>
         </a>
 
         <a href="{{ route('sessions.index') }}" class="group bg-white/40 backdrop-blur-lg border border-white/50 p-6 rounded-[2rem] shadow-lg hover:bg-white/60 transition-all hover:-translate-y-1">
@@ -48,10 +48,21 @@
                 <span class="px-3 py-1 rounded-full bg-white/50 border border-white/50 text-xs font-bold text-lime-800">Arsip</span>
             </div>
             <h3 class="text-3xl font-black text-emerald-900">{{ $sessions->count() }}</h3>
-            <p class="text-emerald-800/70 font-medium">Total Sesi Ujian</p>
+            <p class="text-emerald-800/70 font-medium text-xs mt-1">Total Sesi Ujian</p>
         </a>
 
-        <div class="bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-6 rounded-[2rem] shadow-xl relative overflow-hidden">
+        <a href="{{ route('users.index') }}" class="group bg-white/40 backdrop-blur-lg border border-white/50 p-6 rounded-[2rem] shadow-lg hover:bg-white/60 transition-all hover:-translate-y-1">
+            <div class="flex justify-between items-start mb-4">
+                <div class="p-3 rounded-2xl bg-sky-100 text-sky-600 group-hover:bg-sky-500 group-hover:text-white transition-colors shadow-sm">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                </div>
+                <span class="px-3 py-1 rounded-full bg-white/50 border border-white/50 text-xs font-bold text-sky-800">Akun</span>
+            </div>
+            <h3 class="text-3xl font-black text-emerald-900">{{ \App\Models\User::count() }}</h3>
+            <p class="text-emerald-800/70 font-medium text-xs mt-1">Pengguna & Pengawas</p>
+        </a>
+
+        <div class="bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-6 rounded-[2rem] shadow-xl relative overflow-hidden flex flex-col justify-between">
             <div class="absolute -right-6 -top-6 w-32 h-32 bg-white/20 rounded-full blur-2xl"></div>
             <div class="relative z-10">
                 <div class="flex items-center gap-2 mb-2 opacity-90">
@@ -61,8 +72,8 @@
                     </span>
                     <span class="text-xs font-bold uppercase tracking-widest">Status Sistem</span>
                 </div>
-                <h3 class="text-lg font-bold leading-tight mb-4">Sistem Siap Digunakan</h3>
-                <p class="text-xs opacity-80">Pastikan data siswa sudah terbaru sebelum membuat sesi ujian baru.</p>
+                <h3 class="text-base font-bold leading-tight mb-2">Sistem Siap</h3>
+                <p class="text-xs opacity-80">Pastikan data siswa & akun pengawas sudah terbaru.</p>
             </div>
         </div>
     </div>
